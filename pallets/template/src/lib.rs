@@ -1,102 +1,227 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-
-/// Edit this file to define custom logic or remove it if it is not needed.
-/// Learn more about FRAME and the core library of Substrate FRAME pallets:
-/// <https://docs.substrate.io/reference/frame-pallets/>
-pub use pallet::*;
+//There are 2 modules
+//Crypto module for setting up offfchain workers crypto identification keys and implementation
+//of AppCrypto trait which can be later be used for configuring the pallet in the runime.
+// Running this node , needs to setting a validator node manually using pre defined keys Alice and Bob
+//
+//I have just implement a simple ocw and a single dispatchable for testing .
+//This Offchain worker runs every time a node which is Alice validating a block.
+//
+//Next is to set up http client and implement fecthing data and profe of receiving solution
 
 #[cfg(test)]
 mod mock;
 
-#[cfg(test)]
-mod tests;
 
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
+use sp_runtime::offchain::KeyTypeId;
+
+
+pub const KEY_TYPE:KeyTypeId = KeyTypeId(*b"toff");
+pub use offchain::*;
+pub mod offchain {
+	use frame_system::offchain::Signer;
+	use super::KEY_TYPE;
+	use sp_core::sr25519::Signature as Sr25519Signature;
+	use sp_runtime::{
+		testing::{TestSignature,UintAuthorityId},
+		app_crypto::{app_crypto, sr25519},
+		traits::Verify,
+		MultiSignature, MultiSigner
+	};
+
+	app_crypto!(sr25519, KEY_TYPE);
+	pub struct Crypto;
+	pub struct TestCrypto;
+
+	//implemented for runtime
+	// impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for Crypto {
+	// 	type RuntimeAppPublic = <Signature as Verify>::Signer;
+	// 	type GenericSignature = MultiSignature;
+	// 	type GenericPublic = <Signature as Verify>::Signer;
+	// }
+
+	//Implemented for testing environment
+	impl frame_system::offchain::AppCrypto<UintAuthorityId, TestSignature > for TestCrypto {
+		type RuntimeAppPublic = UintAuthorityId; //RuntimeAppPublic trait is implemented on UintAuthorityId
+		type GenericSignature = TestSignature;
+		type GenericPublic = UintAuthorityId;
+	}
+}
+
+
+pub use pallet::*;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::pallet_prelude::*;
+	use super::*;
+	use frame_support::{
+		dispatch::DispatchResult,
+		pallet_prelude::*,
+
+	};
+	use sp_std::vec::Vec;
+	use frame_support::storage::bounded_vec::BoundedVec;
 	use frame_system::pallet_prelude::*;
+	use frame_system::offchain::{
+		AppCrypto, CreateSignedTransaction, SendSignedTransaction, SendUnsignedTransaction,
+		SignedPayload, Signer, SigningTypes, SubmitTransaction,
+	};
+	use sp_runtime::RuntimeDebug;
+	use log;
+	use sp_runtime::offchain::{http, Duration};
+	use lite_json::json::JsonValue;
+	use lite_json::parse_json;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config {
+	pub trait Config: CreateSignedTransaction<Call<Self>> + frame_system::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+		// We are agreeing that these type should bound to AppCrypto trait.
+		// AppCrypto provides the functionalities for signing , verifying, and types essential
+		// for crypto.
+		// The implementation of this trait is provided inside Crypto module.
+		type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
+		type MaxBytes: Get<u32>;
 	}
+
 
 	#[pallet::pallet]
-	#[pallet::generate_store(pub(super) trait Store)]
+	#[pallet::generate_store(pub (super) trait Store)]
 	pub struct Pallet<T>(_);
 
-	// The pallet's runtime storage items.
-	// https://docs.substrate.io/main-docs/build/runtime-storage/
 	#[pallet::storage]
-	#[pallet::getter(fn something)]
-	// Learn more about declaring storage items:
-	// https://docs.substrate.io/main-docs/build/runtime-storage/#declaring-storage-items
-	pub type Something<T> = StorageValue<_, u32>;
+	#[pallet::getter(fn get_ip)]
+	pub(super) type IPValue<T: Config> = StorageValue<_,BoundedVec<u8,T::MaxBytes> , ValueQuery>;
 
-	// Pallets use events to inform users when important changes are made.
-	// https://docs.substrate.io/main-docs/build/events-errors/
 	#[pallet::event]
-	#[pallet::generate_deposit(pub(super) fn deposit_event)]
+	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
-		SomethingStored(u32, T::AccountId),
-	}
 
-	// Errors inform users that something went wrong.
+	}
 	#[pallet::error]
-	pub enum Error<T> {
-		/// Error names should be descriptive.
-		NoneValue,
-		/// Errors should have helpful documentation associated with them.
-		StorageOverflow,
+	pub enum Error<T>{
+		MaxLenReached
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
-	#[pallet::call]
-	impl<T: Config> Pallet<T> {
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
-		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/main-docs/build/origins/
-			let who = ensure_signed(origin)?;
 
-			// Update storage.
-			<Something<T>>::put(something);
 
-			// Emit an event.
-			Self::deposit_event(Event::SomethingStored(something, who));
-			// Return a successful DispatchResultWithPostInfo
-			Ok(())
+	#[pallet::hooks]
+	impl<T:Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+
+		fn offchain_worker(block_number: T::BlockNumber) {
+			Self::send_signed_txn().map_err(|_| log::info!("failed"));
 		}
 
-		/// An example dispatchable that may throw a custom error.
-		#[pallet::weight(10_000 + T::DbWeight::get().reads_writes(1,1))]
-		pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
-			let _who = ensure_signed(origin)?;
+	}
 
-			// Read a value from storage.
-			match <Something<T>>::get() {
-				// Return an error if the value has not been set.
-				None => return Err(Error::<T>::NoneValue.into()),
-				Some(old) => {
-					// Increment the value read from storage; will error in the event of overflow.
-					let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-					// Update the value in storage with the incremented result.
-					<Something<T>>::put(new);
-					Ok(())
-				},
+	//---------------------THIS FUNCTION MUTATE THE ON-CHAIN STATE---------------------------//
+
+	#[pallet::call]
+	impl<T:Config> Pallet<T>{
+		#[pallet::weight(100)]
+		pub fn register_ip(origin:OriginFor<T>, ip:Vec<u8>) -> DispatchResult{
+			let _= ensure_signed(origin)?;
+			for x in ip{
+				<IPValue<T>>::try_mutate(|b_vec|{
+					b_vec.try_push(x)
+				}).map_err(|_| Error::<T>::MaxLenReached)?
+			};
+			Ok(())
+		}
+	}
+
+
+
+	impl<T: Config> Pallet<T> {
+
+		//-------------------------------------------------------------------------------------//
+		//------------------------SENDING TRANSACTION IMPLEMENTATION---------------------------//
+
+		pub fn send_signed_txn()->Result<(),&'static str> {
+			//getting all the accounts that can sign the following txn.
+			let signer = Signer::<T,T::AuthorityId>::all_accounts();
+
+			//converting to array of bytes as our Call takes that as a parameter_type
+			let ip_bytes= Self::fetch_externally().map_err(|_| "failed to fetch")?;
+
+			//-----------------------------------------------------------------------//
+			let result = signer.send_signed_transaction(|account|{
+				Call::register_ip{ip:ip_bytes.clone()}
+			});
+			for (acc, res) in result{
+				match res{
+					Ok(()) => log::info!("success submitted by {:?}",acc.id),
+					Err(()) => log::info!("failed submitted by {:?}",acc.id)
+				}
 			}
+			Ok(())
+		}
+		//-------------------------------------------------------------------------------------//
+		//--------------------IMPLEMENTATION OF FETCH_EXTERNALLY METHOD------------------------//
+
+
+
+
+		//You can navigate to the implementation of http by clicking "ctr + B" when using Intellij
+		//implement a function that fetches external data
+		pub fn fetch_externally()->Result<Vec<u8>,http::Error> {
+			//make an http request to "https://api.ipify.org?format=json" to get your personal IP address
+			let request = http::Request::get("https://api.ipify.org?format=json");
+			//you can add headers its optional
+			//sending the request which returns a PendingRequest object with an Id parameter
+			// The Request struct has methods for sending the request which returns PendingRequest object
+			let pending = request.send().map_err(|_|http::Error::Unknown)?;
+			//The PendingRequest object has a method for waiting for the request
+			// which you can add a deadline which is optional. And this returns a HttpResult
+			// type alias with a Response object.
+			let result = pending.wait();
+
+			let response = result.map_err(|_| http::Error::IoError)?;
+			//the returned Response object has status code parameter which we may check if its
+			//success before proceeding
+			if response.code != 200 {
+				log::info!("bad code");
+				return Err(http::Error::Unknown)
+			}
+
+			log::info!("fetched success");
+			//convert the returned body to array of bytes and from bytes obtain strings which
+			//you can later turn into json
+			let body = response.body().collect::<Vec<u8>>();
+			let body_str = sp_std::str::from_utf8(&body[..])
+				.map_err(|_|http::Error::Unknown)?;
+			let body_json = lite_json::json_parser::
+			parse_json(body_str).map_err(|_| http::Error::Unknown)?;
+			log::info!("{}",body_str);
+
+			let ip = Self::parse_to_bytes(body_json).unwrap();
+			// let ip_str = sp_std::str::from_utf8(&ip[..]).map_err(|_| http::Error::Unknown)?;
+			// log::info!("{:?}",ip_str);
+			Ok(ip)
+		}
+
+
+
+		//----------------------------------------------------------------------------------//
+
+		//passing helper function -- you can implement as you like---
+		fn parse_to_bytes(body: JsonValue) -> Option<Vec<u8>> {
+			let val = match body {
+				JsonValue::Object(obj) => {
+					let (_,v) = obj.into_iter()
+						.find(|(k,_)|k.iter().copied().eq("ip".chars()))?;
+					match v {
+						JsonValue::String(n) => Some(n),
+						_ => None
+					}
+				}
+				_=> None
+			};
+			let bytes_from_chars:Vec<u8> = val.unwrap().iter().map(|ch| *ch as u8).collect();
+			Some(bytes_from_chars)
 		}
 	}
 }
+
+

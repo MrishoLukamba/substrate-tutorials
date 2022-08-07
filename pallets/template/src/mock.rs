@@ -1,11 +1,24 @@
+use std::sync::Arc;
+use frame_support::assert_ok;
 use crate as pallet_template;
-use frame_support::traits::{ConstU16, ConstU64};
+use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_system as system;
+use frame_system::offchain::{AppCrypto,SigningTypes, CreateSignedTransaction, SendTransactionTypes};
 use sp_core::H256;
 use sp_runtime::{
-	testing::Header,
+	testing::{Header,TestSignature, TestXt},
 	traits::{BlakeTwo256, IdentityLookup},
 };
+use sp_core::{
+	offchain::{testing, OffchainWorkerExt, TransactionPoolExt},
+
+
+};
+use sp_runtime::{
+	traits::{Extrinsic, IdentifyAccount, Verify}
+};
+use sp_keystore::{testing::KeyStore, KeystoreExt, CryptoStore};
+pub use crate::offchain;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -18,7 +31,7 @@ frame_support::construct_runtime!(
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
 		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		TemplateModule: pallet_template::{Pallet, Call, Storage, Event<T>},
+		TemplateModule: pallet_template,
 	}
 );
 
@@ -49,11 +62,104 @@ impl system::Config for Test {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
+//Implementing CreateSignedTransaction trait and other dependency traits
+type AccountId = <<TestSignature as Verify>::Signer as IdentifyAccount>::AccountId;
+type TestExtrinsic = TestXt<Call,()>;
+
+impl<T> CreateSignedTransaction<T> for Test where Call: From<T>,{
+	fn create_transaction<C: AppCrypto<Self::Public, Self::Signature>>
+	(call: Call,
+	 _public:<TestSignature as Verify>::Signer,
+	 _account: AccountId,
+	 nonce: u64
+	) -> Option<(Call, <TestExtrinsic as Extrinsic>::SignaturePayload)> {
+		Some((call,(nonce,())))
+	}
+}
+
+impl<L> SendTransactionTypes<L> for Test where Call: From<L>{
+	type Extrinsic = TestExtrinsic;
+	type OverarchingCall = Call;
+}
+impl SigningTypes for Test {
+	type Public = <TestSignature as Verify>::Signer;
+	type Signature = TestSignature;
+}
+
+
 impl pallet_template::Config for Test {
 	type Event = Event;
+	type AuthorityId = offchain::TestCrypto;
+	type MaxBytes = ConstU32<16>;
 }
 
 // Build genesis storage according to the mock runtime.
-pub fn new_test_ext() -> sp_io::TestExternalities {
-	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+// pub fn new_test_ext() -> sp_io::TestExternalities {
+// 	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+//
+//
+
+//-----------------------TESTING--------------------------------------------//
+
+use frame_support::{assert_noop};
+use sp_core::offchain::testing::{TestOffchainExt, TestTransactionPoolExt};
+
+
+use sp_io;
+use sp_io::TestExternalities;
+
+#[test]
+fn testing_call_function() {
+	// Setting up testing environment
+	let mut test_env = TestExternalities::default();
+	test_env.execute_with(||{
+		assert_ok!(TemplateModule::register_ip(Origin::signed(1),vec![20,10,30,108]));
+		//Checking storage
+		assert_eq!(TemplateModule::get_ip(),vec![20,10,30,108])
+	});
+
+}
+
+#[test]
+fn test_fetch_externally(){
+	let mut test_env = TestExternalities::default();
+	//Getting OCW environment
+	let (ocw,ocw_state) = testing::TestOffchainExt::new();
+	//Configuring OCW environment
+	let ocw_env = OffchainWorkerExt::new(ocw);
+	//Registering OCW
+	test_env.register_extension(ocw_env);
+
+	test_env.execute_with(||{
+	//	let ip = TemplateModule::fetch_externally().unwrap();
+		//let ip_str = sp_std::str::from_utf8(&ip[..]).unwrap();
+		//assert_eq!(ip_str,"127.1.1");
+	});
+}
+
+#[test]
+pub fn test_sending_txn_to_the_pool(){
+	let mut test_env = TestExternalities::default();
+	let (ocw,ocw_state) = TestOffchainExt::new();
+	let ocw_env = OffchainWorkerExt::new(ocw);
+	test_env.register_extension(ocw_env);
+	//Getting txn_pool env
+	let (pool, pool_state) = TestTransactionPoolExt::new();
+	//Getting txn_pool environment
+	let pool_env = TransactionPoolExt::new(pool);
+	//registering txn_pool environment
+	test_env.register_extension(pool_env);
+	//Keystore environment
+	let key_store_env = KeyStore::new();
+	key_store_env.sr25519_generate_new(
+		palet_template::KEY_TYPE,
+		None
+	).unwrap();
+	test_env.register_extension(KeystoreExt(Arc::new(key_store_env)));
+	//testing
+	TemplateModule::send_signed_txn().unwrap();
+	let mut txn = pool_state.transactions.pop();
+	let decoded_call = TestExtrinsic::decode(&mut &*txn).unwrap();
+	assert_eq!(decoded_call, Call::TemplateModule(Call::register_ip{ip:vec![]}));
+
 }
