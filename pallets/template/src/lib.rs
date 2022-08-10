@@ -11,6 +11,8 @@
 
 #[cfg(test)]
 mod mock;
+#[cfg(test)]
+mod ocw;
 
 
 use sp_runtime::offchain::KeyTypeId;
@@ -23,29 +25,23 @@ pub mod offchain {
 	use super::KEY_TYPE;
 	use sp_core::sr25519::Signature as Sr25519Signature;
 	use sp_runtime::{
-		testing::{TestSignature,UintAuthorityId},
 		app_crypto::{app_crypto, sr25519},
 		traits::Verify,
 		MultiSignature, MultiSigner
 	};
 
 	app_crypto!(sr25519, KEY_TYPE);
+
 	pub struct Crypto;
-	pub struct TestCrypto;
 
 	//implemented for runtime
-	// impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for Crypto {
-	// 	type RuntimeAppPublic = <Signature as Verify>::Signer;
-	// 	type GenericSignature = MultiSignature;
-	// 	type GenericPublic = <Signature as Verify>::Signer;
-	// }
-
+	 impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for Crypto {
+	 	type RuntimeAppPublic = sr25519::AppPublic;
+	 	type GenericSignature = Sr25519Signature;
+	 	type GenericPublic = sp_core::sr25519::Public;
+	 }
 	//Implemented for testing environment
-	impl frame_system::offchain::AppCrypto<UintAuthorityId, TestSignature > for TestCrypto {
-		type RuntimeAppPublic = UintAuthorityId; //RuntimeAppPublic trait is implemented on UintAuthorityId
-		type GenericSignature = TestSignature;
-		type GenericPublic = UintAuthorityId;
-	}
+
 }
 
 

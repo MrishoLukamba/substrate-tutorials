@@ -239,6 +239,8 @@ impl pallet_timestamp::Config for Runtime {
 	type WeightInfo = ();
 }
 
+pub const EXISTENTIAL_DEPOSIT: u128 = 500;
+
 impl pallet_balances::Config for Runtime {
 	type MaxLocks = ConstU32<50>;
 	type MaxReserves = ();
@@ -315,11 +317,11 @@ impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
 
 
 /// Implementing pallet-template
-// impl pallet_template::Config for Runtime {
-// 	type Event = Event;
-// 	type  AuthorityId = pallet_template::Crypto;
-// 	type MaxBytes = ConstU32<16>;
-// }
+ impl pallet_template::Config for Runtime {
+ 	type Event = Event;
+ 	type  AuthorityId = pallet_template::Crypto;
+ 	type MaxBytes = ConstU32<16>;
+ }
 
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

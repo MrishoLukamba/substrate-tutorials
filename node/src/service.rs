@@ -61,6 +61,13 @@ pub fn new_partial(
 	if config.keystore_remote.is_some() {
 		return Err(ServiceError::Other("Remote Keystores are not supported.".into()))
 	}
+	// if config.offchain_worker.enabled() {
+	// 	CryptoStore::sr25519_generate_new(
+	// 		&**keystore,
+	// 		node_template_runtime::pallet_template::KEY_TYPE,
+	// 		Some("//Alice")
+	// 	).expect("Remote Keystores are not supported");
+	// }
 
 	let telemetry = config
 		.telemetry_endpoints
