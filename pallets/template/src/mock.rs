@@ -17,7 +17,7 @@ use sp_core::{
 use sp_runtime::{
 	traits::{Extrinsic, IdentifyAccount, Verify}
 };
-//use sp_keystore::{testing::KeyStore, KeystoreExt, CryptoStore};
+use sp_keystore::{testing::KeyStore, KeystoreExt, CryptoStore};
 pub use crate::offchain;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
@@ -93,15 +93,12 @@ impl pallet_template::Config for Test {
 	type MaxBytes = ConstU32<16>;
 }
 
-// Build genesis storage according to the mock runtime.
-// pub fn new_test_ext() -> sp_io::TestExternalities {
-// 	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
-//
-//
+
 
 //-----------------------TESTING--------------------------------------------//
 
 use frame_support::{assert_noop};
+
 use sp_core::offchain::testing::{TestOffchainExt, TestTransactionPoolExt};
 
 
@@ -148,29 +145,44 @@ fn test_fetch_externally(){
 }
 
 
-// #[test]
-// pub fn test_sending_txn_to_the_pool(){
-// 	let mut test_env = TestExternalities::default();
-// 	let (ocw,ocw_state) = TestOffchainExt::new();
-// 	let ocw_env = OffchainWorkerExt::new(ocw);
-// 	test_env.register_extension(ocw_env);
+ #[test]
+ pub fn test_sending_txn_to_the_pool(){
+ 	let mut test_env = TestExternalities::default();
+ 	let (ocw,ocw_state) = TestOffchainExt::new();
+ 	let ocw_env = OffchainWorkerExt::new(ocw);
+ 	test_env.register_extension(ocw_env);
 // 	Getting txn_pool env
-	// let (pool, pool_state) = TestTransactionPoolExt::new();
+	 let (pool, pool_state) = TestTransactionPoolExt::new();
 	// Getting txn_pool environment
-	// let pool_env = TransactionPoolExt::new(pool);
+	 let pool_env = TransactionPoolExt::new(pool);
 	// registering txn_pool environment
-	// test_env.register_extension(pool_env);
+	 test_env.register_extension(pool_env);
 	// Keystore environment
-	// let key_store_env = KeyStore::new();
-	// key_store_env.sr25519_generate_new(
-	// 	palet_template::KEY_TYPE,
-	// 	None
-	// ).unwrap();
-	// test_env.register_extension(KeystoreExt(Arc::new(key_store_env)));
+	 let key_store_env = KeyStore::new();
+	 CryptoStore::sr25519_generate_new(
+		 &key_store_env,
+		 pallet_template::KEY_TYPE,
+		 None
+	 );
+	 test_env.register_extension(KeystoreExt(Arc::new(key_store_env)));
+
+	 //mocking the external call
+	 ocw_state.write().expect_request(testing::PendingRequest {
+		 method: "GET".into(),
+		 uri: "https://api.ipify.org?format=json".into(),
+		 response: Some(br#"{"ip": "197.250.228.247"}"#.to_vec()),
+		 sent: true,
+		 ..Default::default()
+	 });
 	// testing
-	// TemplateModule::send_signed_txn().unwrap();
-	// let mut txn = pool_state.transactions.pop();
-	// let decoded_call = TestExtrinsic::decode(&mut &*txn).unwrap();
-	// assert_eq!(decoded_call, Call::TemplateModule(Call::register_ip{ip:vec![]}));
-//
-// }
+	 test_env.execute_with(||{
+		 TemplateModule::send_signed_txn().unwrap();
+		 TemplateModule::register_ip(Origin::signed(1),vec![103,23,45]);
+
+		 let mut txn = pool_state.write().transactions.pop();
+		 assert_eq!(pool_state.write().transactions.is_empty(),true);
+		 //let decoded_call = TestExtrinsic::decode(&mut &*txn).unwrap();
+		 //assert_eq!(decoded_call, Call::TemplateModule(Call::register_ip{ip:vec![]}));
+	 })
+
+ }
