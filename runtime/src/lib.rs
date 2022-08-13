@@ -268,6 +268,9 @@ impl pallet_sudo::Config for Runtime {
 	type Event = Event;
 	type Call = Call;
 }
+//---------------------------------------------------------------//
+// This is also part of the tutorial.
+// These traits playba part in creating and signing the txn.
 
 impl<T> frame_system::offchain::CreateSignedTransaction<T> for Runtime
 	where Call:From<T>,{
@@ -280,7 +283,6 @@ impl<T> frame_system::offchain::CreateSignedTransaction<T> for Runtime
 
 		let period = BlockHashCount::get() as u64;
 		let current_block = System::block_number().saturated_into::<u64>().saturating_sub(1);
-		let tip = 0;
 		let era = generic::Era::mortal(period, current_block);
 		let extra: SignedExtra = (
 			frame_system::CheckNonZeroSender::<Runtime>::new(),
@@ -290,7 +292,7 @@ impl<T> frame_system::offchain::CreateSignedTransaction<T> for Runtime
 			frame_system::CheckEra::<Runtime>::from(era),
 			frame_system::CheckNonce::<Runtime>::from(nonce),
 			frame_system::CheckWeight::<Runtime>::new(),
-			pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(tip),
+
 		);
 		let raw_payload = SignedPayload::new(call, extra).map_err(|e| {
 			log::warn!("Unable to create signed payload: {:?}",e);
@@ -314,14 +316,14 @@ impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
 	type OverarchingCall = Call;
 	type Extrinsic = UncheckedExtrinsic;
 }
+// ------------------------------------------------------------------//
 
-
-/// Implementing pallet-template
- impl pallet_template::Config for Runtime {
- 	type Event = Event;
- 	type  AuthorityId = pallet_template::Crypto;
- 	type MaxBytes = ConstU32<16>;
- }
+// Implementing pallet-template
+ //impl pallet_template::Config for Runtime {
+ //	type Event = Event;
+ //	type AuthorityId = pallet_template::Crypto;
+ //	type MaxBytes = ConstU32<16>;
+ //}
 
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -340,7 +342,8 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
-		TemplateModule: pallet_template,
+		//comment out the code to include the pallet
+		//TemplateModule: pallet_template,
 	}
 );
 
@@ -359,7 +362,6 @@ pub type SignedExtra = (
 	frame_system::CheckEra<Runtime>,
 	frame_system::CheckNonce<Runtime>,
 	frame_system::CheckWeight<Runtime>,
-	pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
 );
 /// Unchecked extrinsic type as expected by this runtime.
 pub type UncheckedExtrinsic = generic::UncheckedExtrinsic<Address, Call, Signature, SignedExtra>;

@@ -1,9 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+//There are 2 modules
+//Crypto module for setting up offfchain workers crypto identification keys and implementation
+//of AppCrypto trait which can be later be used for configuring the pallet in the runime.
+// Running this node , needs to setting a validator node manually using pre defined keys Alice and Bob
+//
+//I have just implement a simple ocw and a single dispatchable for testing .
+//This Offchain worker runs every time a node which is Alice validating a block.
+//
+//Next is to set up http client and implement fecthing data and profe of receiving solution
 
-// This tutorial contains instructions and
-// commented code for which can be commented out and complete the task
-// Solution is in tutorial.rs
-// dont forget to implement also in Runtime/src
 #[cfg(test)]
 mod mock;
 #[cfg(test)]
@@ -16,7 +21,7 @@ use sp_runtime::offchain::KeyTypeId;
 pub const KEY_TYPE:KeyTypeId = KeyTypeId(*b"toff");
 pub use offchain::*;
 pub mod offchain {
-
+	use frame_system::offchain::Signer;
 	use super::KEY_TYPE;
 	use sp_core::sr25519::Signature as Sr25519Signature;
 	use sp_runtime::{
@@ -25,24 +30,17 @@ pub mod offchain {
 		MultiSignature, MultiSigner
 	};
 
-	// Setting up keystore with a unique id which will be used to fetch keys of type
-	// sr25519 by offchain worker.
 	app_crypto!(sr25519, KEY_TYPE);
 
 	pub struct Crypto;
 
-	//The AppCrypto trait is used for signing transaction by Offchain worker.
-	// 1. Implement it on struct Crypto
-	//  impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for Crypto {
-	//  	type RuntimeAppPublic = // A crypto type that implements RuntimeAppPublic trait;
-	//  	type GenericSignature = // A crypto primitive signature type;
-	//  	type GenericPublic = // A crypto public key type;
-	//  }
-
-	//Note : Crypto primitve types are at sp_core crate
-	//Useful crates -> sp-runtime::app_crypto.
-
-	// This implementation will be used when implementing pallet_template on Runtime.
+	//implemented for runtime
+	impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for Crypto {
+		type RuntimeAppPublic = sr25519::AppPublic;
+		type GenericSignature = Sr25519Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+	//Implemented for testing environment
 
 }
 
@@ -71,9 +69,6 @@ pub mod pallet {
 	use lite_json::parse_json;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
-	// CreateSignedTransaction trait must be a super trait as it has functionalities for creating
-	// a signed transaction.
-	// Later will be implemented on runtime
 	#[pallet::config]
 	pub trait Config: CreateSignedTransaction<Call<Self>> + frame_system::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
@@ -111,24 +106,26 @@ pub mod pallet {
 	impl<T:Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 
 		fn offchain_worker(block_number: T::BlockNumber) {
-			// 7. Call send_signed_txn function
-			//Use proper error handling
-			// the offchain worker will run and submit the transaction into txn_pool.
+			let res = Self::send_signed_txn();
+			if let Err(e) = res {
+				log::info!("{}",e)
 			}
 		}
 
-
+	}
 
 	//---------------------THIS FUNCTION MUTATE THE ON-CHAIN STATE---------------------------//
-	//Offchain workers use transactions to change state on-chain.
-	// A pallet call is used to submit data into on-chain storage
 
 	#[pallet::call]
 	impl<T:Config> Pallet<T>{
 		#[pallet::weight(100)]
 		pub fn register_ip(origin:OriginFor<T>, ip:Vec<u8>) -> DispatchResult{
 			let _= ensure_signed(origin)?;
-			// 6. Store the array of bytes on chain storage IPValue
+			for x in ip{
+				<IPValue<T>>::try_mutate(|b_vec|{
+					b_vec.try_push(x)
+				}).map_err(|_| Error::<T>::MaxLenReached)?
+			};
 			Ok(())
 		}
 	}
@@ -141,18 +138,22 @@ pub mod pallet {
 		//------------------------SENDING TRANSACTION IMPLEMENTATION---------------------------//
 
 		pub fn send_signed_txn()->Result<(),&'static str> {
-			// 3. Get all the accounts that can sign the following txn.
-			// Use Signer object.
+			//getting all the accounts that can sign the following txn.
+			let signer = Signer::<T,T::AuthorityId>::all_accounts();
 
-
-			// 4. Call fetch_externally function and saved the response to a variable
-
+			//converting to array of bytes as our Call takes that as a parameter_type
+			let ip_bytes= Self::fetch_externally().map_err(|_| "failed to fetch")?;
 
 			//-----------------------------------------------------------------------//
-			// 5. send a signed transaction using signer object methods
-
-			// Note use proper error handling to notify the state of the offchain worker
-
+			let result = signer.send_signed_transaction(|account|{
+				Call::register_ip{ip:ip_bytes.clone()}
+			});
+			for (acc, res) in result{
+				match res{
+					Ok(()) => log::info!("success submitted by {:?}",acc.id),
+					Err(()) => log::info!("failed submitted by {:?}",acc.id)
+				}
+			}
 			Ok(())
 		}
 		//-------------------------------------------------------------------------------------//
@@ -162,28 +163,48 @@ pub mod pallet {
 
 
 		//You can navigate to the implementation of http by clicking "ctrl + B" when using Intellij.
-		// 2 .Implement a function that fetches external data
-		// Useful crates -> sp_runtime::offchain::http
-		// Use lite_json crate to parse the Json body
-		// Comment out the below function
-		//      -       -
-		//      -       -
-		//pub fn fetch_externally()->Result<Vec<u8>,http::Error> {
-			//make an http request to "https://api.ipify.org?format=json"
-			// to get your personal IP address
-			//
-			//
-			// The below return value is just to avoid errors when compiling, please remove it when
-			// implementing the fucntion.
+		//implement a function that fetches external data
+		pub fn fetch_externally()->Result<Vec<u8>,http::Error> {
+			//make an http request to "https://api.ipify.org?format=json" to get your personal IP address
+			let request = http::Request::get("https://api.ipify.org?format=json");
+			//you can add headers its optional
+			//sending the request which returns a PendingRequest object with an Id parameter
+			// The Request struct has methods for sending the request which returns PendingRequest object
+			let pending = request.send().map_err(|_|http::Error::Unknown)?;
+			//The PendingRequest object has a method for waiting for the request
+			// which you can add a deadline which is optional. And this returns a HttpResult
+			// type alias with a Response object.
+			let result = pending.wait();
 
-		//}
+			let response = result.map_err(|_| http::Error::IoError)?;
+			//the returned Response object has status code parameter which we may check if its
+			//success before proceeding
+			if response.code != 200 {
+				log::info!("bad code");
+				return Err(http::Error::Unknown)
+			}
+
+			log::info!("fetched success");
+			//convert the returned body to array of bytes and from bytes obtain strings which
+			//you can later turn into json
+			let body = response.body().collect::<Vec<u8>>();
+			let body_str = sp_std::str::from_utf8(&body[..])
+				.map_err(|_|http::Error::Unknown)?;
+			let body_json = lite_json::json_parser::
+			parse_json(body_str).map_err(|_| http::Error::Unknown)?;
+			log::info!("{}",body_str);
+
+			let ip = Self::parse_to_bytes(body_json).unwrap();
+			// let ip_str = sp_std::str::from_utf8(&ip[..]).map_err(|_| http::Error::Unknown)?;
+			// log::info!("{:?}",ip_str);
+			Ok(ip)
+		}
 
 
 
 		//----------------------------------------------------------------------------------//
 
-		//parsing helper function -- you can implement as you like---
-		// This helper function is based on lite_json crate
+		//passing helper function -- you can implement as you like---
 		fn parse_to_bytes(body: JsonValue) -> Option<Vec<u8>> {
 			let val = match body {
 				JsonValue::Object(obj) => {

@@ -32,7 +32,7 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
 }
 
 pub(crate) type FullClient =
-	sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
+sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
 type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
@@ -61,13 +61,6 @@ pub fn new_partial(
 	if config.keystore_remote.is_some() {
 		return Err(ServiceError::Other("Remote Keystores are not supported.".into()))
 	}
-	// if config.offchain_worker.enabled() {
-	// 	CryptoStore::sr25519_generate_new(
-	// 		&**keystore,
-	// 		node_template_runtime::pallet_template::KEY_TYPE,
-	// 		Some("//Alice")
-	// 	).expect("Remote Keystores are not supported");
-	// }
 
 	let telemetry = config
 		.telemetry_endpoints
@@ -94,6 +87,16 @@ pub fn new_partial(
 			executor,
 		)?;
 	let client = Arc::new(client);
+
+	let keystore = keystore_container.sync_keystore();
+
+	if config.offchain_worker.enabled {
+		sp_keystore::SyncCryptoStore::sr25519_generate_new(
+			&*keystore,
+			node_template_runtime::pallet_template::KEY_TYPE,
+			Some("//Alice")
+		).unwrap();
+	}
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());

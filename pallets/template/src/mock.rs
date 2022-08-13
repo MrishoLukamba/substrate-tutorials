@@ -17,7 +17,7 @@ use sp_core::{
 use sp_runtime::{
 	traits::{Extrinsic, IdentifyAccount, Verify}
 };
-use sp_keystore::{testing::KeyStore, KeystoreExt, CryptoStore};
+use sp_keystore::{testing::KeyStore, KeystoreExt, SyncCryptoStore};
 pub use crate::offchain;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
@@ -159,11 +159,11 @@ fn test_fetch_externally(){
 	 test_env.register_extension(pool_env);
 	// Keystore environment
 	 let key_store_env = KeyStore::new();
-	 CryptoStore::sr25519_generate_new(
+	 SyncCryptoStore::sr25519_generate_new(
 		 &key_store_env,
 		 pallet_template::KEY_TYPE,
 		 None
-	 );
+	 ).unwrap();
 	 test_env.register_extension(KeystoreExt(Arc::new(key_store_env)));
 
 	 //mocking the external call
@@ -177,12 +177,6 @@ fn test_fetch_externally(){
 	// testing
 	 test_env.execute_with(||{
 		 TemplateModule::send_signed_txn().unwrap();
-		 TemplateModule::register_ip(Origin::signed(1),vec![103,23,45]);
-
-		 let mut txn = pool_state.write().transactions.pop();
-		 assert_eq!(pool_state.write().transactions.is_empty(),true);
-		 //let decoded_call = TestExtrinsic::decode(&mut &*txn).unwrap();
-		 //assert_eq!(decoded_call, Call::TemplateModule(Call::register_ip{ip:vec![]}));
 	 })
 
  }
