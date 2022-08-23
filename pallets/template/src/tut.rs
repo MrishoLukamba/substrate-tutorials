@@ -158,10 +158,10 @@ pub mod pallet {
 		//      -       -
 		//      -       -
 		pub fn fetch_externally()->Result<u64,http::Error> {
-			//make an http request to the below API
-			//
-			let request = http::Request::
-			get("https://api.coinstats.app/public/v1/coins?skip=0&limit=1&currency=EUR");
+		//make an http request to the below API
+		//
+		   let request = http::Request::
+					get("https://api.coinstats.app/public/v1/coins?skip=0&limit=1&currency=EUR");
 			//The request object has send method which returns PendingRequest object
 			//1. Send the request
 			//The PendingRequest object has a method for waiting for the request

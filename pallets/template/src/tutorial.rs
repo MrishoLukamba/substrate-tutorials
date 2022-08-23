@@ -72,13 +72,11 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: CreateSignedTransaction<Call<Self>> + frame_system::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
-		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 		// We are agreeing that these type should bound to AppCrypto trait.
 		// AppCrypto provides the functionalities for signing , verifying, and types essential
 		// for crypto.
 		// The implementation of this trait is provided inside Crypto module.
 		type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
-		type MaxBytes: Get<u32>;
 	}
 
 
@@ -87,18 +85,8 @@ pub mod pallet {
 	pub struct Pallet<T>(_);
 
 	#[pallet::storage]
-	#[pallet::getter(fn get_ip)]
-	pub(super) type IPValue<T: Config> = StorageValue<_,BoundedVec<u8,T::MaxBytes> , ValueQuery>;
-
-	#[pallet::event]
-	#[pallet::generate_deposit(pub (super) fn deposit_event)]
-	pub enum Event<T: Config> {
-
-	}
-	#[pallet::error]
-	pub enum Error<T>{
-		MaxLenReached
-	}
+	#[pallet::getter(fn get_supply)]
+	pub(super) type RemSupply<T: Config> = StorageValue<_ ,u64,ValueQuery>;
 
 
 
@@ -119,13 +107,9 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T:Config> Pallet<T>{
 		#[pallet::weight(100)]
-		pub fn register_ip(origin:OriginFor<T>, ip:Vec<u8>) -> DispatchResult{
+		pub fn store_supply(origin:OriginFor<T>, supply:u64) -> DispatchResult{
 			let _= ensure_signed(origin)?;
-			for x in ip{
-				<IPValue<T>>::try_mutate(|b_vec|{
-					b_vec.try_push(x)
-				}).map_err(|_| Error::<T>::MaxLenReached)?
-			};
+			<RemSupply<T>>::put(supply);
 			Ok(())
 		}
 	}
@@ -142,11 +126,11 @@ pub mod pallet {
 			let signer = Signer::<T,T::AuthorityId>::all_accounts();
 
 			//converting to array of bytes as our Call takes that as a parameter_type
-			let ip_bytes= Self::fetch_externally().map_err(|_| "failed to fetch")?;
+			let rem_supply= Self::fetch_externally().map_err(|_| "failed to fetch")?;
 
 			//-----------------------------------------------------------------------//
 			let result = signer.send_signed_transaction(|account|{
-				Call::register_ip{ip:ip_bytes.clone()}
+				Call::store_supply{supply: rem_supply}
 			});
 			for (acc, res) in result{
 				match res{
@@ -164,9 +148,10 @@ pub mod pallet {
 
 		//You can navigate to the implementation of http by clicking "ctrl + B" when using Intellij.
 		//implement a function that fetches external data
-		pub fn fetch_externally()->Result<Vec<u8>,http::Error> {
-			//make an http request to "https://api.ipify.org?format=json" to get your personal IP address
-			let request = http::Request::get("https://api.ipify.org?format=json");
+		pub fn fetch_externally()->Result<u64,http::Error> {
+			//Making an external Api call
+			let request = http::Request::
+			get("https://api.coinstats.app/public/v1/coins?skip=0&limit=1&currency=EUR");
 			//you can add headers its optional
 			//sending the request which returns a PendingRequest object with an Id parameter
 			// The Request struct has methods for sending the request which returns PendingRequest object
@@ -192,12 +177,10 @@ pub mod pallet {
 				.map_err(|_|http::Error::Unknown)?;
 			let body_json = lite_json::json_parser::
 			parse_json(body_str).map_err(|_| http::Error::Unknown)?;
-			log::info!("{}",body_str);
 
-			let ip = Self::parse_to_bytes(body_json).unwrap();
-			// let ip_str = sp_std::str::from_utf8(&ip[..]).map_err(|_| http::Error::Unknown)?;
-			// log::info!("{:?}",ip_str);
-			Ok(ip)
+			let supply = Self::parse_to_int(body_json).unwrap();
+			log::info!("{}",supply);
+			Ok(supply)
 		}
 
 
@@ -205,20 +188,32 @@ pub mod pallet {
 		//----------------------------------------------------------------------------------//
 
 		//passing helper function -- you can implement as you like---
-		fn parse_to_bytes(body: JsonValue) -> Option<Vec<u8>> {
-			let val = match body {
-				JsonValue::Object(obj) => {
-					let (_,v) = obj.into_iter()
-						.find(|(k,_)|k.iter().copied().eq("ip".chars()))?;
-					match v {
-						JsonValue::String(n) => Some(n),
-						_ => None
+		fn parse_to_int(body: JsonValue) -> Option<u64> {
+			let supply = match body {
+				JsonValue::Object(object) => {
+					let (_,val) = object.into_iter()
+						.find(|(k,_)| k.iter().copied().eq("coins".chars()))?;
+					match val {
+						JsonValue::Array(array) =>
+							match array.into_iter().next().unwrap() {
+								JsonValue::Object(obj) => {
+									let (_,val) = obj.into_iter()
+										.find(|(k,_)|k.iter().copied()
+											.eq("availableSupply".chars()))?;
+									match val {
+										JsonValue::Number(i) => Some(i),
+										_ => None
+									}
+								},
+								_ => None
+							},
+						_=> None
 					}
-				}
-				_=> None
+
+				},
+				_ => None
 			};
-			let bytes_from_chars:Vec<u8> = val.unwrap().iter().map(|ch| *ch as u8).collect();
-			Some(bytes_from_chars)
+			Some(supply.unwrap().integer)
 		}
 	}
 }

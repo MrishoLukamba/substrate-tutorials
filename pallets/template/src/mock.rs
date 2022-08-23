@@ -88,9 +88,7 @@ impl SigningTypes for Test {
 
 
 impl pallet_template::Config for Test {
-	type Event = Event;
 	type AuthorityId = ocw_test::TestCrypto;
-	type MaxBytes = ConstU32<16>;
 }
 
 
@@ -111,9 +109,9 @@ fn testing_call_function() {
 	// Setting up testing environment
 	let mut test_env = TestExternalities::default();
 	test_env.execute_with(||{
-		assert_ok!(TemplateModule::register_ip(Origin::signed(1),vec![20,10,30,108]));
+		assert_ok!(TemplateModule::store_supply(Origin::signed(1),23028));
 		//Checking storage
-		assert_eq!(TemplateModule::get_ip(),vec![20,10,30,108])
+		assert_eq!(TemplateModule::get_supply(),23028)
 	});
 
 }
@@ -131,16 +129,20 @@ fn test_fetch_externally(){
 	// Expecting a request and a mocking result
 	ocw_state.write().expect_request(testing::PendingRequest {
 		method: "GET".into(),
-		uri: "https://api.ipify.org?format=json".into(),
-		response: Some(br#"{"ip": "197.250.228.247"}"#.to_vec()),
+		uri: "https://api.coinstats.app/public/v1/coins?skip=0&limit=1&currency=EUR".into(),
+		response: Some(br#"{"coins":
+		 [{"id":"bitcoin","icon":"https://static.coinstats.app/coins/1650455588819.png","name":
+		 "Bitcoin","symbol":"BTC","rank":1,"price":21478.496205745247,"priceBtc":1,"volume":36466449117.13149,"marketCap":410878799754.2603,"availableSupply":
+		 19129775,"totalSupply":21000000,"priceChange1h":0.1,"priceChange1d":0.76,"priceChange1w":-9.86,"websiteUrl":"http://www.bitcoin.org","twitterUrl":
+		 "https://twitter.com/bitcoin","exp":
+		 ["https://blockchair.com/bitcoin/","https://btc.com/","https://btc.tokenview.com/"]}]}"#.to_vec()),
 		sent: true,
 		..Default::default()
 	});
 
 	test_env.execute_with(||{
-		let ip = TemplateModule::fetch_externally().unwrap();
-		let ip_str = sp_std::str::from_utf8(&ip[..]).unwrap();
-		assert_eq!(ip_str,"197.250.228.247");
+		let supply = TemplateModule::fetch_externally().unwrap();
+		assert_eq!(supply,19129775);
 	});
 }
 
@@ -169,8 +171,13 @@ fn test_fetch_externally(){
 	 //mocking the external call
 	 ocw_state.write().expect_request(testing::PendingRequest {
 		 method: "GET".into(),
-		 uri: "https://api.ipify.org?format=json".into(),
-		 response: Some(br#"{"ip": "197.250.228.247"}"#.to_vec()),
+		 uri: "https://api.coinstats.app/public/v1/coins?skip=0&limit=1&currency=EUR".into(),
+		 response: Some(br#"{"coins":
+		 [{"id":"bitcoin","icon":"https://static.coinstats.app/coins/1650455588819.png","name":
+		 "Bitcoin","symbol":"BTC","rank":1,"price":21478.496205745247,"priceBtc":1,"volume":36466449117.13149,"marketCap":410878799754.2603,"availableSupply":
+		 19129775,"totalSupply":21000000,"priceChange1h":0.1,"priceChange1d":0.76,"priceChange1w":-9.86,"websiteUrl":"http://www.bitcoin.org","twitterUrl":
+		 "https://twitter.com/bitcoin","exp":
+		 ["https://blockchair.com/bitcoin/","https://btc.com/","https://btc.tokenview.com/"]}]}"#.to_vec()),
 		 sent: true,
 		 ..Default::default()
 	 });

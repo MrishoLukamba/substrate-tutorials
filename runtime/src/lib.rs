@@ -319,11 +319,9 @@ impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
 // ------------------------------------------------------------------//
 
 // Implementing pallet-template
- //impl pallet_template::Config for Runtime {
- //	type Event = Event;
- //	type AuthorityId = pallet_template::Crypto;
- //	type MaxBytes = ConstU32<16>;
- //}
+ impl pallet_template::Config for Runtime {
+	type AuthorityId = pallet_template::Crypto;
+ }
 
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -343,7 +341,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		//comment out the code to include the pallet
-		//TemplateModule: pallet_template,
+		TemplateModule: pallet_template,
 	}
 );
 
